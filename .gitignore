@@ -1,5 +1,11 @@
+**/.ipynb_checkpoints/
+**/__pycache__/
+**/models/
+
 **.xml
 **.xsd
 **.csv
-tokenizer.json
-**/target/
+**.json
+**.old
+**/target/**
+.DS_Store
