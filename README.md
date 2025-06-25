@@ -2,13 +2,6 @@
 
 This tool helps match and resolve entity names across different datasets using advanced algorithms.
 
-## Features
-
-- Fuzzy string matching
-- Customizable matching rules
-- REST API for integration
-- Scalable and containerized deployment
-
 ## Getting Started
 
 1. **Clone the repository:**

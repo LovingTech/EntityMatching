@@ -3,7 +3,6 @@ use tokio_postgres::NoTls;
 use std::env;
 use rayon::prelude::*;
 use strsim::levenshtein;
-use dotenv::dotenv;
 
 #[derive(Clone)]
 struct NameEntry {
