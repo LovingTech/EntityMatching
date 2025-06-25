@@ -3,6 +3,7 @@ use tokio_postgres::NoTls;
 use std::env;
 use rayon::prelude::*;
 use strsim::levenshtein;
+use dotenv::dotenv;
 
 #[derive(Clone)]
 struct NameEntry {
@@ -14,7 +15,10 @@ const BATCH_SIZE: i64 = 1000;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (client, connection) = tokio_postgres::connect("postgres://postgres:password@127.0.0.1:5432/lei", NoTls).await?;
+    dotenv::dotenv().ok();
+    let db_password = env::var("DB_PASSWORD").expect("DB_PASSWORD must be set in .env");
+    let db_url = format!("postgres://postgres:{}@db:5432/lei", db_password);
+    let (client, connection) = tokio_postgres::connect(&db_url, NoTls).await?;
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("DB connection error: {}", e);

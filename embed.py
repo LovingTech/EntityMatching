@@ -1,17 +1,21 @@
 import psycopg2
 import os
-from models import * 
+from models import *
 from utils import *
 from training import *
 from dataset import encode
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
+import dotenv
+
+dotenv.load_dotenv()
+
 
 DB_NAME = "lei"
 DB_USER = "postgres"
-DB_PASSWORD = "password"
-DB_HOST = "127.0.0.1"
+DB_PASSWORD =  os.getenv("POSTGRES_PASSWORD")
+DB_HOST = "db"
 DB_PORT = "5432"
 
 conn = psycopg2.connect(
@@ -24,16 +28,16 @@ with conn.cursor() as curr:
     curr.execute(
     """CREATE TABLE Embed_v1 (
         id uuid DEFAULT gen_random_uuid() PRIMARY KEY REFERENCES Names(id),
-        embedding vector(768) NOT NULL 
+        embedding vector(768) NOT NULL
                 )""")
 conn.commit()
 
 
 # model params
-d_out_model=768 
-num_att_heads=12 
-num_hidden_layers=12 
-d_hidden_ff=3072 
+d_out_model=768
+num_att_heads=12
+num_hidden_layers=12
+d_hidden_ff=3072
 max_seq_len=512
 # tokenizer params
 tokenizer_path = "./tokenizer.json"
@@ -42,12 +46,12 @@ BATCH_SIZE = 1000
 
 tokenizer = getTokenizer(tokenizer_path)
 model = Model(
-    vocab_size=vocab_size, 
+    vocab_size=vocab_size,
     d_model = d_out_model,
     num_heads = num_att_heads,
     num_layers = num_hidden_layers,
     d_ff = d_hidden_ff,
-    max_len = max_seq_len 
+    max_len = max_seq_len
     )
 
 model.load_weights("./models/model_finetuned_e11_b7372.safetensors")
