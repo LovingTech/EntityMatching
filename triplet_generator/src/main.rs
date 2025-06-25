@@ -1,6 +1,5 @@
 
 use tokio_postgres::NoTls;
-use dotenv::dotenv;
 use std::env;
 use rayon::prelude::*;
 use strsim::levenshtein;
@@ -15,8 +14,6 @@ const BATCH_SIZE: i64 = 1000;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenv().ok();
-
     let (client, connection) = tokio_postgres::connect("postgres://postgres:password@127.0.0.1:5432/lei", NoTls).await?;
     tokio::spawn(async move {
         if let Err(e) = connection.await {
