@@ -16,7 +16,7 @@ BATCH_SIZE = 32
 EPOCHS = 3
 LR = 2e-5
 MAX_LEN = 64
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "mps"
 
 
 tokenizer = BertTokenizer.from_pretrained(MODEL_NAME)
@@ -103,7 +103,10 @@ def main():
                 optimizer.step()
 
                 total_loss += loss.item()
+            
 
+
+            torch.save(model.state_dict(), f"bert_triplet_finetuned_e{epoch}.pt")
             print(f"Epoch {epoch+1} Loss: {total_loss:.4f}")
 
     # Save model
