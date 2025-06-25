@@ -1,6 +1,7 @@
 **/.ipynb_checkpoints/
 **/__pycache__/
 **/models/
+**/mlruns/
 
 **.xml
 **.xsd
@@ -9,3 +10,5 @@
 **.old
 **/target/**
 .DS_Store
+
+

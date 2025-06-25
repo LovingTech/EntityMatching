@@ -69,11 +69,11 @@ def batch_iterator(dataset, batch_size, shuffle=True):
 
 def get_latest_checkpoint(models_path,filename_fn):
     if not os.path.exists(models_path):
-        return None
+        return 0, None
 
     checkpoints = [f for f in os.listdir(models_path) if f.endswith(".safetensors")]
     if not checkpoints:
-        return None
+        return 0, None
 
     def extract_epoch_batch(filename):
         filename_path = filename_fn("(\\d+)","(\\d+)")
@@ -86,3 +86,14 @@ def get_latest_checkpoint(models_path,filename_fn):
     latest = max(checkpoints, key=lambda f: extract_epoch_batch(f))
     match = re.search(r"model_e(\d+)_b(\d+).safetensors", latest)
     return int(match.group(1)), os.path.join(models_path, latest)
+
+def getParams(model_params):
+    size = 0
+    for _, module in model_params.items():
+        if isinstance(module, type(mx.array([0]))):
+            size += module.size
+        elif isinstance(module, dict):
+            size += getParams(module)
+        else:
+            pass
+    return size

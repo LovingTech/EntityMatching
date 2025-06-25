@@ -53,6 +53,17 @@ class TransformerEncoderBlock(nn.Module):
         x = x + self.ffn(self.norm2(x))
         return x
 
+class AttentionPool(nn.Module):
+    def __init__(self, d_model):
+        super().__init__()
+        self.attention = nn.Linear(d_model, 1)
+
+    def __call__(self, x):  
+        scores = self.attention(x)  
+        weights = nn.softmax(scores, axis=1)
+        pooled = mx.sum(weights * x, axis=1)
+        return pooled
+
 
 class TransformerEncoder(nn.Module):
     def __init__(self, vocab_size, d_model=768, num_heads=12, num_layers=12, d_ff=3072, max_len=512):
@@ -69,3 +80,13 @@ class TransformerEncoder(nn.Module):
             x = layer(x, mask)
         return self.norm(x)
 
+class Model(nn.Module):
+    def __init__(self, vocab_size, d_model=768, num_heads=12, num_layers=12, d_ff=3072, max_len=512):
+        super().__init__()
+        self.transformer_encoder = TransformerEncoder(vocab_size, d_model, num_heads, num_layers, d_ff, max_len)
+        self.attention_pool = AttentionPool(d_model)
+
+    def __call__(self, input_ids):
+        transformer_output = self.transformer_encoder(input_ids)
+        pooled_output = self.attention_pool(transformer_output)
+        return pooled_output
