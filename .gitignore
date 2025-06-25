@@ -1,8 +1,17 @@
+# Python/logging folders
 **/.ipynb_checkpoints/
 **/__pycache__/
 **/models/
 **/mlruns/
+**/.venv/
 
+# Container Paths
+/pgadmin/
+/data/
+
+# General Files to exclude
+**.env
+!.env.example
 **.xml
 **.xsd
 **.csv
