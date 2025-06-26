@@ -10,3 +10,4 @@ tokio-postgres = "0.7"
 dotenv = "0.15"
 tokio = { version = "1.45.1", features = ["full"] }
 rand = "0.9.1"
+crossbeam = "0.8.4"

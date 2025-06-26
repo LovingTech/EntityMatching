@@ -1,9 +1,13 @@
-
 use tokio_postgres::NoTls;
 use std::env;
-use rand::{prelude::IndexedRandom, rng};
+use rand::prelude::IndexedRandom;
+use rand::rng;
 use rayon::prelude::*;
 use strsim::levenshtein;
+use crossbeam::channel;
+use std::sync::Arc;
+use std::thread;
+use std::io::{self, Write};
 
 #[derive(Clone)]
 struct NameEntry {
@@ -11,81 +15,91 @@ struct NameEntry {
     lei: String,
 }
 
-const BATCH_SIZE: i64 = 1000;
-const RANDOM_SAMPLE_SIZE: usize = 100;
+const RANDOM_SAMPLE_SIZE: usize = 10000;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
     let db_password = env::var("DB_PASSWORD").expect("DB_PASSWORD must be set in .env");
     let db_url = format!("postgres://postgres:{}@127.0.0.1:5432/lei", db_password);
+
     let (client, connection) = tokio_postgres::connect(&db_url, NoTls).await?;
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("DB connection error: {}", e);
         }
     });
-    let mut rng = rng();
 
-    // Step 1: Load all names into memory for hard negative mining
+    // Load all names into memory and wrap in Arc<[T]>
     let name_rows = client.query("SELECT name, lei FROM names", &[]).await?;
-    let all_names: Vec<NameEntry> = name_rows.into_iter()
-        .map(|r| NameEntry {
-            name: r.get("name"),
-            lei: r.get("lei"),
-        })
-        .collect();
+    let all_names: Arc<[NameEntry]> = Arc::from(
+        name_rows
+            .into_iter()
+            .map(|r| NameEntry {
+                name: r.get("name"),
+                lei: r.get("lei"),
+            })
+            .collect::<Vec<_>>(),
+    );
 
-    println!("anchor,positive,hard_negative");
-
-    // Step 2: Paginate through anchor-positive pairs
-    let mut offset = 0;
-    loop {
-        let rows = client.query(
+    // Load all anchor-positive pairs (can add LIMIT/OFFSET if too large)
+    let anchor_rows = client
+        .query(
             "
-            WITH ranked_pairs AS (
-                SELECT
-                    n1.lei,
-                    n1.name AS anchor,
-                    n2.name AS positive,
-                    ROW_NUMBER() OVER () AS rn
-                FROM names n1
-                JOIN names n2 ON n1.lei = n2.lei AND n1.name != n2.name
-            )
-            SELECT lei, anchor, positive
-            FROM ranked_pairs
-            WHERE rn > $1 AND rn <= $2
+            SELECT n1.lei, n1.name AS anchor, n2.name AS positive
+            FROM names n1
+            JOIN names n2 ON n1.lei = n2.lei AND n1.name != n2.name
             ",
-            &[&offset, &(offset + BATCH_SIZE)],
-        ).await?;
+            &[],
+        )
+        .await?;
 
-        if rows.is_empty() {
-            break;
+    // Buffered channel: reduce contention between threads
+    let (sender, receiver) = channel::bounded(10000);
+
+    // Buffered output: faster than println!
+    let printer_handle = thread::spawn(move || {
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+        writeln!(handle, "anchor,positive,hard_negative").ok();
+
+        for line in receiver {
+            writeln!(handle, "{}", line).ok();
         }
+    });
 
-        for row in rows {
-            let anchor: String = row.get("anchor");
-            let positive: String = row.get("positive");
-            let anchor_lei: String = row.get("lei");
+    // Clone shared name list (Arc) for threads
+    let all_names = all_names.clone();
 
+    anchor_rows.into_par_iter().for_each_with(sender.clone(), move |s, row| {
+        let anchor: String = row.get("anchor");
+        let positive: String = row.get("positive");
+        let anchor_lei: String = row.get("lei");
+        let anchor_lc = anchor.to_lowercase();
 
-            let negative = all_names.choose_multiple(&mut rng, RANDOM_SAMPLE_SIZE)
-                .cloned()
-                .collect::<Vec<_>>()
-                .par_iter()
-                .filter(|e| e.lei != anchor_lei)
-                .map(|e| (e.name.clone(), levenshtein(&anchor.to_lowercase(), &e.name.to_lowercase())))
-                .filter(|(_, dist)| *dist < 5) // Optional: tune for hardness
-                .min_by_key(|(_, dist)| *dist)
-                .map(|(name, _)| name);
+        let mut rng = rng();
+        let negative = all_names
+            .choose_multiple(&mut rng, RANDOM_SAMPLE_SIZE)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .filter(|e| e.lei != anchor_lei)
+            .map(|e| {
+                let dist = levenshtein(&anchor_lc, &e.name.to_lowercase());
+                (e.name.clone(), dist)
+            })
+            .min_by_key(|(_, dist)| *dist)
+            .map(|(name, _)| name);
 
-            if let Some(hard_neg) = negative {
-                println!("\"{}\",\"{}\",\"{}\"", anchor, positive, hard_neg);
-            }
+        if let Some(hard_neg) = negative {
+            let line = format!("\"{}\",\"{}\",\"{}\"", anchor, positive, hard_neg);
+            s.send(line).ok(); // ignore send errors
         }
+    });
 
-        offset += BATCH_SIZE;
-    }
+    // Drop sender to close channel and let printer finish
+    drop(sender);
+    printer_handle.join().unwrap();
 
     Ok(())
 }
