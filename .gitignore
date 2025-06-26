@@ -18,6 +18,9 @@
 **.json
 **.old
 **/target/**
+**.pth
+**.pt
+**.safetensor
 .DS_Store
 
 

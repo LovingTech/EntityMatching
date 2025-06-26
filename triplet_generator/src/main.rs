@@ -1,6 +1,7 @@
 
 use tokio_postgres::NoTls;
 use std::env;
+use rand::{prelude::IndexedRandom, rng};
 use rayon::prelude::*;
 use strsim::levenshtein;
 
@@ -11,18 +12,20 @@ struct NameEntry {
 }
 
 const BATCH_SIZE: i64 = 1000;
+const RANDOM_SAMPLE_SIZE: usize = 100;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
     let db_password = env::var("DB_PASSWORD").expect("DB_PASSWORD must be set in .env");
-    let db_url = format!("postgres://postgres:{}@db:5432/lei", db_password);
+    let db_url = format!("postgres://postgres:{}@127.0.0.1:5432/lei", db_password);
     let (client, connection) = tokio_postgres::connect(&db_url, NoTls).await?;
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("DB connection error: {}", e);
         }
     });
+    let mut rng = rng();
 
     // Step 1: Load all names into memory for hard negative mining
     let name_rows = client.query("SELECT name, lei FROM names", &[]).await?;
@@ -65,7 +68,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let positive: String = row.get("positive");
             let anchor_lei: String = row.get("lei");
 
-            let negative = all_names.par_iter()
+
+            let negative = all_names.choose_multiple(&mut rng, RANDOM_SAMPLE_SIZE)
+                .cloned()
+                .collect::<Vec<_>>()
+                .par_iter()
                 .filter(|e| e.lei != anchor_lei)
                 .map(|e| (e.name.clone(), levenshtein(&anchor.to_lowercase(), &e.name.to_lowercase())))
                 .filter(|(_, dist)| *dist < 5) // Optional: tune for hardness
@@ -73,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|(name, _)| name);
 
             if let Some(hard_neg) = negative {
-                println!("{},{},{}", anchor, positive, hard_neg);
+                println!("\"{}\",\"{}\",\"{}\"", anchor, positive, hard_neg);
             }
         }
 
