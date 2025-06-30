@@ -7,7 +7,8 @@ use strsim::levenshtein;
 use crossbeam::channel;
 use std::sync::Arc;
 use std::thread;
-use std::io::{self, Write};
+use std::io;
+use csv::WriterBuilder;
 
 #[derive(Clone)]
 struct NameEntry {
@@ -42,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect::<Vec<_>>(),
     );
 
-    // Load all anchor-positive pairs (can add LIMIT/OFFSET if too large)
+    // Load all anchor-positive pairs
     let anchor_rows = client
         .query(
             "
@@ -54,32 +55,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
 
-    // Buffered channel: reduce contention between threads
-    let (sender, receiver) = channel::bounded(10000);
+    // Buffered channel for parallel workers
+    let (sender, receiver): (channel::Sender<Vec<String>>, channel::Receiver<Vec<String>>) =
+        channel::bounded(10000);
 
-    // Buffered output: faster than println!
+    // Printer thread using csv::Writer for safe escaping
     let printer_handle = thread::spawn(move || {
         let stdout = io::stdout();
-        let mut handle = stdout.lock();
-        writeln!(handle, "anchor,positive,hard_negative").ok();
+        let handle = stdout.lock();
+        let mut wtr = WriterBuilder::new().from_writer(handle);
 
-        for line in receiver {
-            writeln!(handle, "{}", line).ok();
+        wtr.write_record(&["anchor", "positive", "hard_negative"]).ok();
+
+        for record in receiver {
+            wtr.write_record(&record).ok();
         }
+
+        wtr.flush().ok();
     });
 
-    // Clone shared name list (Arc) for threads
+    // Clone Arc for workers
     let all_names = all_names.clone();
 
+    // Parallel processing using for_each_with + your rng()
     anchor_rows.into_par_iter().for_each_with(sender.clone(), move |s, row| {
         let anchor: String = row.get("anchor");
         let positive: String = row.get("positive");
         let anchor_lei: String = row.get("lei");
         let anchor_lc = anchor.to_lowercase();
 
-        let mut rng = rng();
+        let mut local_rng = rng(); // <- preserve your usage of rng()
+
         let negative = all_names
-            .choose_multiple(&mut rng, RANDOM_SAMPLE_SIZE)
+            .choose_multiple(&mut local_rng, RANDOM_SAMPLE_SIZE)
             .cloned()
             .collect::<Vec<_>>()
             .into_par_iter()
@@ -92,14 +100,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|(name, _)| name);
 
         if let Some(hard_neg) = negative {
-            let line = format!("\"{}\",\"{}\",\"{}\"", anchor, positive, hard_neg);
-            s.send(line).ok(); // ignore send errors
+            let record = vec![anchor, positive, hard_neg];
+            s.send(record).ok(); // ignore send errors
         }
     });
 
-    // Drop sender to close channel and let printer finish
     drop(sender);
     printer_handle.join().unwrap();
 
     Ok(())
 }
+

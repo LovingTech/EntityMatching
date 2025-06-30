@@ -18,13 +18,13 @@ class NameMatchingDataset:
 
     def __getitem__(self, idx):
         return self.triplets[idx]
-        
+
 class TokenizedDataset:
     def __init__(self, dataset, tokenizer, data_csv="training.csv", max_len=64):
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.dataset = dataset
-    
+
     def __len__(self):
         return len(self.dataset)
 
@@ -32,4 +32,4 @@ class TokenizedDataset:
         return tuple(np.array(encode(a, self.tokenizer, self.max_len), dtype=np.int32) for a in self.dataset[idx])
 
 
-    
+
