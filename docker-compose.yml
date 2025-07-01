@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./data:/var/lib/postgres/data
-      - ./init:/docker-entrypoint-initdb.d
+      - ./db_setup/:/docker-entrypoint-initdb.d
     networks:
       dbnet:
         ipv4_address: 172.12.0.2
